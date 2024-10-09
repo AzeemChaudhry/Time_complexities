@@ -5,147 +5,106 @@ from pathlib import Path
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='Algorithm Time Complexities',
+    page_icon=':bar_chart:',  # This is an emoji shortcode. Could be a URL too.
 )
 
 # -----------------------------------------------------------------------------
 # Declare some useful functions.
 
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def load_data():
+    """Load data from the CSV files."""
+    # Load data for 'data.csv'
+    data_filename = Path(__file__).parent/'data.csv'
+    data_df = pd.read_csv(data_filename)
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+    # Load data for 'times_data.csv'
+    times_filename = Path(__file__).parent/'times_data.csv'
+    times_df = pd.read_csv(times_filename)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    return data_df, times_df
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
+# Load data
+data_df, times_df = load_data()
 
 # -----------------------------------------------------------------------------
 # Draw the actual page
 
 # Set the title that appears at the top of the page.
 '''
-# :earth_americas: GDP dashboard
+# :bar_chart: Algorithm Time Complexity Dashboard
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
+Explore and visualize the time complexities of different sorting algorithms based on your provided data.
 '''
 
 # Add some spacing
 ''
-''
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+# Display the datasets
+st.subheader("Dataset 1: Data.csv Overview")
+st.write(data_df.head())
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+st.subheader("Dataset 2: Times_data.csv Overview")
+st.write(times_df.head())
 
-countries = gdp_df['Country Code'].unique()
+# Add a slider to filter data by size category in `data_df`
+min_size = int(data_df['category'].min())
+max_size = int(data_df['category'].max())
 
-if not len(countries):
-    st.warning("Select at least one country")
+selected_size_range = st.slider(
+    'Select the size range of data you are interested in:',
+    min_value=min_size,
+    max_value=max_size,
+    value=(min_size, max_size))
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+filtered_data_df = data_df[(data_df['category'] >= selected_size_range[0]) & 
+                           (data_df['category'] <= selected_size_range[1])]
 
-''
-''
-''
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
+st.subheader("Filtered Data.csv based on Size Category")
+st.write(filtered_data_df)
 
-st.header('GDP over time', divider='gray')
+# Allow selection of algorithms to display from `times_df`
+algorithms = times_df.columns.tolist()[1:-1]  
+selected_algorithms = st.multiselect(
+    'Select the algorithms you want to visualize:',
+    algorithms,
+    default=algorithms)  # Default to all algorithms
 
-''
+# Filter `times_df` based on selected algorithms
+filtered_times_df = times_df[['size'] + selected_algorithms]
 
+
+st.subheader("Filtered Times Data.csv")
+st.write(filtered_times_df)
+
+st.header('Time Complexity Visualization for Selected Algorithms')
 st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+    filtered_times_df.set_index('size')
 )
+st.header('Algorithm Performance Comparison', divider='gray')
 
-''
-''
+cols = st.columns(3) 
 
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
+for i, algorithm in enumerate(selected_algorithms):
     col = cols[i % len(cols)]
 
     with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+        
+        first_time = filtered_times_df[algorithm].iat[0]
+        last_time = filtered_times_df[algorithm].iat[-1]
 
-        if math.isnan(first_gdp):
+        if math.isnan(first_time):
             growth = 'n/a'
             delta_color = 'off'
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
+            growth = f'{last_time / first_time:.2f}x'
             delta_color = 'normal'
 
         st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
+            label=f'{algorithm} Time Complexity',
+            value=f'{last_time:.4f}',
             delta=growth,
             delta_color=delta_color
         )
